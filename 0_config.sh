@@ -1,4 +1,5 @@
 #!/bin/bash
+# dont create backup parameter files (these would clutter the directory)
 export GMX_MAXBACKUP=-1
 
 # --- INPUT & OUTPUT FILES ---
@@ -7,47 +8,26 @@ PDB_NAME="Ndj1_27-352"
 
 # organize output & script folders
 RESULTS_DIR="results"
-SCRIPTS_DIR="scripts"
+WORKDIR="work_files"
 mkdir -p $RESULTS_DIR
-mkdir -p $SCRIPTS_DIR
+mkdir -p $WORKDIR
 
-# --- EXECUTABLE --- 
-# Executable name
-GMX="gmx_mpi"
-
-# MPI Runner (Leave empty if on workstation)
-MPI_CMD=""
-
-# GPU Settings
-GPU_FLAGS="-nb gpu"
+# --- EXECUTABLE SETTINGS --- 
+GMX="gmx_mpi"       # Executable name
+MPI_CMD=""          # MPI Runner (Leave empty if on workstation)
+GPU_FLAGS="-nb gpu" # run on GPU 
 
 
 # --- SIMULATION PARAMETERS ---
-# Temperature in Kelvin
-TEMP=310
-
-# Salt concentration in mol/liter (M)
-# 0.15 is physiological (150mM).
-SALT_CONC=0.15
-
-# Production Simulation time in Nanoseconds
+TEMP=310.15           # kelvin (-273.15 to celcius)
+SALT_CONC=0.15        # in mol/liter, 0.15 is 'physiological'
+                      # Production Simulation time in Nanoseconds
 NVT_TIME_PS=100
 NPT_TIME_PS=500
-SIM_TIME_NS=200
+SIM_TIME_NS=10        # change this to production length
+DT=0.002              # standard 2 fs step size, picosecond unit
 
-# --- GROMACS SETTINGS ---
-# Forcefield
-# The PDF likely uses "charmm36" or "charmm36-jul2022".
-# NOTE: If 'pdb2gmx' fails saying it can't find this, you may need to 
-# download the charmm36.ff folder and place it in your working directory.
-FF="charmm36-jul2022"
-
-# Water Model
-# CHARMM36 is typically parameterized for use with TIP3P water.
-WATER="tip3p"
-
-# Box Shape
-# 'dodecahedron' is ~30% faster than 'cubic' because it uses less water
-# to maintain the same periodic distance.
+FF="charmm36-jul2022" # install from https://mackerell.umaryland.edu/charmm_ff.shtml
+WATER="tip3p"         # standard water model for CHARMM36
 BOX_TYPE="dodecahedron"
 

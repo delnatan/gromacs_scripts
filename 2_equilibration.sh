@@ -3,54 +3,66 @@ source 0_config.sh
 
 echo ">>> STARTING STEP 2: EQUILIBRATION <<<"
 
-# Helper to update temp in mdp
-update_temp() {
-    sed -i "s/ref_t.*=.*/ref_t                   = $2/" $1
-    sed -i "s/gen_temp.*=.*/gen_temp                = $2/" $1
-}
+# 1. Generate Parameters from Templates (Non-destructive)
+# We calculate steps here using the DT defined in 0_config.sh
+NVT_STEPS=$(echo "$NVT_TIME_PS / $DT" | bc)
+NPT_STEPS=$(echo "$NPT_TIME_PS / $DT" | bc)
 
-# Helper to update nsteps based on time (ps)
-update_steps() {
-    local file=$1
-    local time_ps=$2
-    
-    # Get timestep (dt) from file, default to 0.002 if missing
-    local dt=$(grep "dt" $file | awk '{print $3}' | sed 's/;//')
-    if [ -z "$dt" ]; then dt=0.002; fi
+echo "--> Generating MDP files in $WORKDIR..."
 
-    # Calculate steps
-    local steps=$(echo "$time_ps / $dt" | bc)
-    
-    echo "--> Setting $file to $time_ps ps ($steps steps)"
-    sed -i "s/nsteps.*=.*/nsteps                  = $steps/" $file
-}
+# Create NVT mdp
+sed -e "s/REPLACEME_TEMP/$TEMP/g" \
+    -e "s/REPLACEME_STEPS/$NVT_STEPS/g" \
+    -e "s/REPLACEME_DT/$DT/g" \
+    params/nvt.mdp.template > $WORKDIR/nvt.mdp
 
-echo "--> Updating temperature to $TEMP K..."
-update_temp params/nvt.mdp $TEMP
-update_temp params/npt.mdp $TEMP
+# Create NPT mdp
+sed -e "s/REPLACEME_TEMP/$TEMP/g" \
+    -e "s/REPLACEME_STEPS/$NPT_STEPS/g" \
+    -e "s/REPLACEME_DT/$DT/g" \
+    params/npt.mdp.template > $WORKDIR/npt.mdp
+
 
 # ==========================================
 # PHASE 1: NVT (Temperature)
 # ==========================================
-echo "--> Configuring NVT..."
-update_steps params/nvt.mdp $NVT_TIME_PS
+echo "--> Running NVT Equilibration..."
 
-echo "--> Running NVT..."
-$GMX grompp -f params/nvt.mdp -c em.gro -r em.gro -p topol.top -o nvt.tpr
-$MPI_CMD $GMX mdrun -deffnm -v nvt $GPU_FLAGS
+# Define file paths
+NVT_TPR="$WORKDIR/nvt.tpr"
+NVT_OUT="$WORKDIR/nvt" # Base name for output
+EM_GRO="$WORKDIR/em.gro" # Assumes step 1 put files in WORKDIR
 
-if [ -f "nvt.edr" ]; then
+# Check if input exists
+if [ ! -f "$EM_GRO" ]; then
+    echo "!! ERROR: $EM_GRO not found. Did you run Step 1?"
+    exit 1
+fi
+
+$GMX grompp -f $WORKDIR/nvt.mdp -c $EM_GRO -r $EM_GRO -p topol.top -o $NVT_TPR
+$MPI_CMD $GMX mdrun -deffnm $NVT_OUT -v $GPU_FLAGS
+
+# --- NVT ANALYSIS (Inline Gnuplot) ---
+if [ -f "${NVT_OUT}.edr" ]; then
     echo "--> Analyzing NVT Temperature..."
-    { echo "Temperature"; echo "0"; } | $GMX energy -f nvt.edr -o $RESULTS_DIR/temperature.xvg
+    
+    # Extract Data
+    { echo "Temperature"; echo "0"; } | $GMX energy -f ${NVT_OUT}.edr -o $RESULTS_DIR/temperature.xvg
 
-    gnuplot -c $SCRIPTS_DIR/plot_generic.gp \
-        "$RESULTS_DIR/temperature.xvg" \
-        "$RESULTS_DIR/2_temperature.png" \
-        "NVT Equilibration" \
-        "Time (ps)" \
-        "Temperature (K)" \
-        2 \
-        10
+    # Plot directly here!
+    gnuplot <<-EOF
+        set terminal pngcairo size 800,600 enhanced font 'Arial,12'
+        set output "$RESULTS_DIR/2_temperature.png"
+        set title "NVT Equilibration ($TEMP K)"
+        set xlabel "Time (ps)"
+        set ylabel "Temperature (K)"
+        set grid
+        
+        # Draw a line at target temp (Bash variable injection!)
+        set arrow from graph 0,first $TEMP to graph 1,first $TEMP nohead lc rgb "red" dt 2
+        
+        plot "$RESULTS_DIR/temperature.xvg" using 1:2 with lines lc rgb "blue" title "System Temp"
+EOF
 
     echo "--> Plot saved to $RESULTS_DIR/2_temperature.png"
 else
@@ -58,40 +70,47 @@ else
     exit 1
 fi
 
-# ==========================================
-# PHASE 2: NPT (Pressure & Density)
-# ==========================================
-echo "--> Configuring NPT..."
-update_steps params/npt.mdp $NPT_TIME_PS
 
-echo "--> Running NPT..."
-$GMX grompp -f params/npt.mdp -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -o npt.tpr
-$MPI_CMD $GMX mdrun -deffnm npt -v $GPU_FLAGS
+# ==========================================
+# PHASE 2: NPT (Pressure)
+# ==========================================
+echo "--> Running NPT Equilibration..."
 
-if [ -f "npt.edr" ]; then
-    echo "--> Analyzing NPT Pressure and Density..."
+NPT_TPR="$WORKDIR/npt.tpr"
+NPT_OUT="$WORKDIR/npt"
+
+$GMX grompp -f $WORKDIR/npt.mdp -c ${NVT_OUT}.gro -r ${NVT_OUT}.gro -t ${NVT_OUT}.cpt -p topol.top -o $NPT_TPR
+$MPI_CMD $GMX mdrun -deffnm $NPT_OUT -v $GPU_FLAGS
+
+# --- NPT ANALYSIS (Inline Gnuplot) ---
+if [ -f "${NPT_OUT}.edr" ]; then
+    echo "--> Analyzing NPT Pressure/Density..."
     
-    # Pressure
-    { echo "Pressure"; echo "0"; } | $GMX energy -f npt.edr -o $RESULTS_DIR/pressure.xvg
-    gnuplot -c $SCRIPTS_DIR/plot_generic.gp \
-        "$RESULTS_DIR/pressure.xvg" \
-        "$RESULTS_DIR/3_pressure.png" \
-        "NPT Equilibration" \
-        "Time (ps)" \
-        "Pressure (bar)" \
-        2 \
-        20
+    # Extract
+    { echo "Pressure"; echo "0"; } | $GMX energy -f ${NPT_OUT}.edr -o $RESULTS_DIR/pressure.xvg
+    { echo "Density"; echo "0"; } | $GMX energy -f ${NPT_OUT}.edr -o $RESULTS_DIR/density.xvg
 
-    # Density
-    { echo "Density"; echo "0"; } | $GMX energy -f npt.edr -o $RESULTS_DIR/density.xvg
-    gnuplot -c $SCRIPTS_DIR/plot_generic.gp \
-        "$RESULTS_DIR/density.xvg" \
-        "$RESULTS_DIR/3_density.png" \
-        "NPT Equilibration" \
-        "Time (ps)" \
-        "Density (kg/m^3)" \
-        2 \
-        20
+    # Plot Pressure
+    gnuplot <<-EOF
+        set terminal pngcairo size 800,600 enhanced font 'Arial,12'
+        set output "$RESULTS_DIR/3_pressure.png"
+        set title "NPT Pressure"
+        set xlabel "Time (ps)"
+        set ylabel "Pressure (bar)"
+        set grid
+        plot "$RESULTS_DIR/pressure.xvg" using 1:2 with lines lc rgb "green" title "Pressure"
+EOF
+
+    # Plot Density
+    gnuplot <<-EOF
+        set terminal pngcairo size 800,600 enhanced font 'Arial,12'
+        set output "$RESULTS_DIR/3_density.png"
+        set title "NPT Density"
+        set xlabel "Time (ps)"
+        set ylabel "Density (kg/m^3)"
+        set grid
+        plot "$RESULTS_DIR/density.xvg" using 1:2 with lines lc rgb "purple" title "Density"
+EOF
         
     echo "--> Plots saved to $RESULTS_DIR/"
 else
