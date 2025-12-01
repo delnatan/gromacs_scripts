@@ -41,13 +41,18 @@ else
     echo ">> Interactive pdb2gmx setup complete."
 fi
 
+# [FIX] pdb2gmx wrote "work_files/posre.itp" into the include line of topol.top.
+# Since topol.top is ALREADY in work_files, this creates a double path error.
+# We use sed to strip the directory prefix so it just looks for "posre.itp".
+sed -i "s|$WORKDIR/posre.itp|posre.itp|g" $WORKDIR/topol.top
+
 # ==========================================
 # 2. Define Box
 # ==========================================
 echo "--> Defining $BOX_TYPE simulation box..."
 $GMX editconf -f $WORKDIR/processed.gro \
     -o $WORKDIR/newbox.gro \
-    -c -d 1.2 -bt $BOX_TYPE
+    -c -d 1.0 -bt $BOX_TYPE
 
 # ==========================================
 # 3. Solvate
@@ -100,4 +105,18 @@ if [ -f "$WORKDIR/em.edr" ]; then
     # Inline Gnuplot
     gnuplot <<-EOF
         set terminal pngcairo size 800,600 enhanced font 'Arial,12'
-        set
+        set output "$RESULTS_DIR/1_potential_energy.png"
+        set title "Energy Minimization"
+        set xlabel "Steps"
+        set ylabel "Potential Energy (kJ/mol)"
+        set grid
+        
+        # Plot using column 1 (steps) and 2 (energy)
+        plot "$RESULTS_DIR/potential.xvg" using 1:2 with lines lc rgb "black" title "Potential Energy"
+EOF
+
+    echo "--> Plot saved to $RESULTS_DIR/1_potential_energy.png"
+else
+    echo "!! ERROR: Minimization failed. Check $WORKDIR/em.log"
+    exit 1
+fi
