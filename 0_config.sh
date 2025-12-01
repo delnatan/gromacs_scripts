@@ -4,7 +4,7 @@ export GMX_MAXBACKUP=-1
 
 # --- INPUT & OUTPUT FILES ---
 # The name of your input PDB file (without extension)
-PDB_NAME="Ndj1_27-352"
+PDB_NAME="your_pdb_name"
 
 # organize output & script folders
 RESULTS_DIR="results"
@@ -24,7 +24,7 @@ SALT_CONC=0.15        # in mol/liter, 0.15 is 'physiological'
                       # Production Simulation time in Nanoseconds
 NVT_TIME_PS=100
 NPT_TIME_PS=500
-SIM_TIME_NS=10        # change this to production length
+SIM_TIME_NS=1000      # change this to production length
 DT=0.002              # standard 2 fs step size, picosecond unit
 
 FF="charmm36-jul2022" # install from https://mackerell.umaryland.edu/charmm_ff.shtml

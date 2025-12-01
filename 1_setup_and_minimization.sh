@@ -11,13 +11,35 @@ mkdir -p $WORKDIR
 # ==========================================
 echo "--> Generating topology (Forcefield: $FF, Water: $WATER)..."
 
+# temporarily disable 'exit on error'
+set +e 
+
 # Input: Root PDB ($PDB_NAME.pdb)
 # Output: work_files/topol.top, work_files/processed.gro
 $GMX pdb2gmx -f ${PDB_NAME}.pdb \
     -o $WORKDIR/processed.gro \
     -p $WORKDIR/topol.top \
     -i $WORKDIR/posre.itp \
-    -water $WATER -ff $FF -ignh
+    -water $WATER -ff $FF -ignh > pdb2gmx_attempt1.log 2>&1
+
+# capture exit code
+EXIT_CODE=$?
+
+# re-enable 'exit on error'
+set -e
+
+if [ $EXIT_CODE -eq 0 ]; then
+    echo ">> Standard pdb2gmx setup successful."
+    rm pdb2gmx_attempt1.log
+else
+    echo ">> Choosing termini 'manually'"
+    printf "1\n0\n" | $GMX pdb2gmx -f ${PDB_NAME}.pdb \
+    -o $WORKDIR/processed.gro \
+    -p $WORKDIR/topol.top \
+    -i $WORKDIR/posre.itp \
+    -water $WATER -ff $FF -ignh -ter
+    echo ">> Interactive pdb2gmx setup complete."
+fi
 
 # ==========================================
 # 2. Define Box

@@ -39,7 +39,10 @@ if [ ! -f "$EM_GRO" ]; then
     exit 1
 fi
 
-$GMX grompp -f $WORKDIR/nvt.mdp -c $EM_GRO -r $EM_GRO -p topol.top -o $NVT_TPR
+$GMX grompp -f $WORKDIR/nvt.mdp \
+     -c $EM_GRO -r $EM_GRO \
+     -p $WORKDIR/topol.top -o $NVT_TPR
+
 $MPI_CMD $GMX mdrun -deffnm $NVT_OUT -v $GPU_FLAGS
 
 # --- NVT ANALYSIS (Inline Gnuplot) ---
@@ -79,7 +82,10 @@ echo "--> Running NPT Equilibration..."
 NPT_TPR="$WORKDIR/npt.tpr"
 NPT_OUT="$WORKDIR/npt"
 
-$GMX grompp -f $WORKDIR/npt.mdp -c ${NVT_OUT}.gro -r ${NVT_OUT}.gro -t ${NVT_OUT}.cpt -p topol.top -o $NPT_TPR
+$GMX grompp -f $WORKDIR/npt.mdp \
+     -c ${NVT_OUT}.gro -r ${NVT_OUT}.gro -t ${NVT_OUT}.cpt \
+     -p $WORKDIR/topol.top -o $NPT_TPR
+
 $MPI_CMD $GMX mdrun -deffnm $NPT_OUT -v $GPU_FLAGS
 
 # --- NPT ANALYSIS (Inline Gnuplot) ---
