@@ -12,39 +12,48 @@ mkdir -p $WORKDIR
 echo "--> Generating topology (Forcefield: $FF, Water: $WATER)..."
 
 # temporarily disable 'exit on error'
-set +e 
+set +e
 
-# Input: Root PDB ($PDB_NAME.pdb)
-# Output: work_files/topol.top, work_files/processed.gro
+# ATTEMPT 1: Try Automatic (Quiet)
+# [FIX]: Removed '-i' to allow auto-naming of posre files for multiple chains
+# [FIX]: Added '-merge all' to handle identical chains automatically
 $GMX pdb2gmx -f ${PDB_NAME}.pdb \
     -o $WORKDIR/processed.gro \
     -p $WORKDIR/topol.top \
-    -i $WORKDIR/posre.itp \
-    -water $WATER -ff $FF -ignh > pdb2gmx_attempt1.log 2>&1
+    -water $WATER -ff $FF -ignh \
+    -merge all \
+    > pdb2gmx_attempt1.log 2>&1
 
-# capture exit code
 EXIT_CODE=$?
-
-# re-enable 'exit on error'
-set -e
+set -e # Re-enable exit-on-error
 
 if [ $EXIT_CODE -eq 0 ]; then
-    echo ">> Standard pdb2gmx setup successful."
+    echo ">> Standard pdb2gmx setup successful (Defaults accepted)."
     rm pdb2gmx_attempt1.log
 else
-    echo ">> Choosing termini 'manually'"
-    printf "1\n0\n" | $GMX pdb2gmx -f ${PDB_NAME}.pdb \
-    -o $WORKDIR/processed.gro \
-    -p $WORKDIR/topol.top \
-    -i $WORKDIR/posre.itp \
-    -water $WATER -ff $FF -ignh -ter
+    echo ">> Default setup failed (likely ambiguous termini)."
+    echo ">> Attempting interactive setup with pre-filled inputs..."
+
+    # ATTEMPT 2: Manual Fallback
+    # [CRITICAL UPDATE]: We send "1\n0" four times. 
+    # This covers up to 4 chains (Dimer = 4 inputs, Trimer = 6 inputs).
+    # GROMACS stops reading when it's done, so providing 'extra' inputs is safe.
+    # 1 = N-terminus choice (User preference)
+    # 0 = C-terminus choice (User preference)
+    
+    printf "1\n0\n1\n0\n1\n0\n1\n0\n" | $GMX pdb2gmx -f ${PDB_NAME}.pdb \
+        -o $WORKDIR/processed.gro \
+        -p $WORKDIR/topol.top \
+        -water $WATER -ff $FF -ignh \
+        -merge all \
+        -ter 
+        
     echo ">> Interactive pdb2gmx setup complete."
 fi
 
-# [FIX] pdb2gmx wrote "work_files/posre.itp" into the include line of topol.top.
-# Since topol.top is ALREADY in work_files, this creates a double path error.
-# We use sed to strip the directory prefix so it just looks for "posre.itp".
-sed -i "s|$WORKDIR/posre.itp|posre.itp|g" $WORKDIR/topol.top
+# [FIX]: Strip absolute paths from the topology include lines
+# This handles the fact that we removed '-i' and GROMACS named the files itself
+sed -i "s|$WORKDIR/||g" $WORKDIR/topol.top
 
 # ==========================================
 # 2. Define Box
