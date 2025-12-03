@@ -69,3 +69,7 @@ Do **not** edit the files in `work_files/` (like `nvt.mdp`). They are overwritte
 To change physics settings (e.g., changing the thermostat or cutoffs):
 1.  Edit the **Template** files in `params/` (e.g., `params/nvt.mdp.template`).
 2.  Keep the placeholders (e.g., `REPLACEME_TEMP`) intact if you want them controlled by `0_config.sh`.
+
+
+## Visualization
+It seems that the trajectory files don't support chain IDs. You can fix this in ChimeraX by using the `changechains #1 & protein A` command. You can select ions by directly specifying the atoms in ChimeraX (e.g. `sel @na` for sodium)

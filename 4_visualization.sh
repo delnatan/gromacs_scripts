@@ -28,33 +28,45 @@ if [ ! -f "$XTC_FILE" ]; then
 fi
 
 # ==========================================
-# 1. Center & Unwrap
+# 1. Make molecules 'whole'
+# ==========================================
+echo "1/5 undoing PBC on system"
+echo "System" | $GMX trjconv -s $TPR_FILE -F $XTC_FILE \
+                     -o $WORKDIR/tmp_whole.xtc \
+                     -pbc whole \
+                     -quiet
+
+# ==========================================
+# 2. Center & Unwrap
 # ==========================================
 # "Backbone" centers the protein. "System" is output.
 # "-pbc mol" keeps molecules together.
-echo "--> 1/4 Centering protein and unwrapping PBC..."
-echo -e "Backbone\nSystem" | $GMX trjconv -s $TPR_FILE -f $XTC_FILE \
-    -o $WORKDIR/tmp_centered.xtc \
-    -center -pbc mol -dt $DT_VIZ \
-    -quiet
+echo "--> 2/5 Centering protein and unwrapping PBC..."
+echo -e "Backbone\nSystem" | $GMX trjconv -s $TPR_FILE \
+                                  -f $WORKDIR/tmp_whole.xtc \
+                                  -o $WORKDIR/tmp_centered.xtc \
+                                  -center -pbc mol -ur compact\
+                                  -dt $DT_VIZ \
+                                  -quiet
 
 # ==========================================
-# 2. Fit (Remove Rotation/Translation)
+# 3. Fit (Remove Rotation/Translation)
 # ==========================================
-# "Backbone" is used for least-squares fitting. "System" is output.
+# "Backbone" is used for least-squares fitting. "non-Water" is output.
 # This makes the protein look like it's standing still while water moves around it.
-echo "--> 2/4 Aligning trajectory (Rot+Trans fit)..."
-echo -e "Backbone\nSystem" | $GMX trjconv -s $TPR_FILE -f $WORKDIR/tmp_centered.xtc \
-    -o $WORKDIR/tmp_aligned.xtc \
-    -fit rot+trans \
-    -quiet
+echo "--> 3/5 Aligning trajectory (Rot+Trans fit)..."
+echo -e "Backbone\nnon-Water" | $GMX trjconv -s $TPR_FILE \
+                                  -f $WORKDIR/tmp_centered.xtc \
+                                  -o $WORKDIR/tmp_aligned.xtc \
+                                  -fit rot+trans \
+                                  -quiet
 
 # ==========================================
 # 3. Smooth (Filter)
 # ==========================================
 # High-frequency vibrations can be distracting in videos. 
 # This averages positions over $SMOOTH_FRAMES.
-echo "--> 3/4 Smoothing trajectory (Average over $SMOOTH_FRAMES frames)..."
+echo "--> 4/5 Smoothing trajectory (Average over $SMOOTH_FRAMES frames)..."
 FINAL_TRAJ="$VIZ_DIR/${PDB_NAME}_clean_traj.xtc"
 
 echo -e "System" | $GMX filter -s $TPR_FILE -f $WORKDIR/tmp_aligned.xtc \
@@ -67,7 +79,7 @@ echo -e "System" | $GMX filter -s $TPR_FILE -f $WORKDIR/tmp_aligned.xtc \
 # ==========================================
 # We dump the FIRST frame of the NEW, aligned trajectory.
 # This ensures the PDB atoms are in the exact same box/orientation as the XTC.
-echo "--> 4/4 Extracting reference PDB..."
+echo "--> 5/5 Extracting reference PDB..."
 FINAL_PDB="$VIZ_DIR/${PDB_NAME}_ref.pdb"
 
 echo -e "System" | $GMX trjconv -s $TPR_FILE -f $FINAL_TRAJ \
