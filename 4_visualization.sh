@@ -55,40 +55,44 @@ echo -e "Backbone\nSystem" | $GMX trjconv -s $TPR_FILE \
 # "Backbone" is used for least-squares fitting. "non-Water" is output.
 # This makes the protein look like it's standing still while water moves around it.
 echo "--> 3/5 Aligning trajectory (Rot+Trans fit)..."
-echo -e "Backbone\nnon-Water" | $GMX trjconv -s $TPR_FILE \
+echo -e "Backbone\nSystem" | $GMX trjconv -s $TPR_FILE \
                                   -f $WORKDIR/tmp_centered.xtc \
                                   -o $WORKDIR/tmp_aligned.xtc \
                                   -fit rot+trans \
                                   -quiet
 
 # ==========================================
-# 3. Smooth (Filter)
+# 4. Smooth (Filter)
 # ==========================================
 # High-frequency vibrations can be distracting in videos. 
 # This averages positions over $SMOOTH_FRAMES.
 echo "--> 4/5 Smoothing trajectory (Average over $SMOOTH_FRAMES frames)..."
-FINAL_TRAJ="$VIZ_DIR/${PDB_NAME}_clean_traj.xtc"
 
-echo -e "System" | $GMX filter -s $TPR_FILE -f $WORKDIR/tmp_aligned.xtc \
-    -ol $FINAL_TRAJ \
-    -nf $SMOOTH_FRAMES -all \
-    -quiet
+echo -e "non-Water" | $GMX filter -s $TPR_FILE -f $WORKDIR/tmp_aligned.xtc \
+                           -ol $WORKDIR/tmp_smoothed \
+                           -nf $SMOOTH_FRAMES -all \
+                           -quiet
 
 # ==========================================
-# 4. Generate Reference PDB
+# 5. Generate Reference PDB with matching trajectory
 # ==========================================
-# We dump the FIRST frame of the NEW, aligned trajectory.
+# We dump the FIRST frame of the NEW, aligned, smoothed trajectory.
 # This ensures the PDB atoms are in the exact same box/orientation as the XTC.
 echo "--> 5/5 Extracting reference PDB..."
-FINAL_PDB="$VIZ_DIR/${PDB_NAME}_ref.pdb"
 
-echo -e "System" | $GMX trjconv -s $TPR_FILE -f $FINAL_TRAJ \
-    -o $FINAL_PDB \
-    -dump 0 \
-    -quiet
+FINAL_PDB="$VIZ_DIR/${PDB_NAME}_ref.pdb"
+echo -e "non-Water" | $GMX trjconv -s $TPR_FILE -f $WORKDIR/tmp_smoothed.xtc \
+                           -o $FINAL_PDB \
+                           -dump 0 \
+                           -quiet
+
+FINAL_TRAJ="$VIZ_DIR/${PDB_NAME}_clean_traj.xtc"
+echo -e "non-Water" | $GMX trjconv -s $TPR_FILE -f $WORKDIR/tmp_smoothed.xtc \
+                           -o $FINAL_TRAJ \
+                           -quiet
 
 # Cleanup
-rm $WORKDIR/tmp_centered.xtc $WORKDIR/tmp_aligned.xtc
+rm $WORKDIR/tmp_centered.xtc $WORKDIR/tmp_aligned.xtc $WORKDIR/tmp_smoothed.xtc
 
 echo ">>> VISUALIZATION PREP COMPLETE <<<"
 echo "To view in ChimeraX/PyMOL:"
