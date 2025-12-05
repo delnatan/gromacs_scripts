@@ -16,12 +16,10 @@ set +e
 
 # ATTEMPT 1: Try Automatic (Quiet)
 # [FIX]: Removed '-i' to allow auto-naming of posre files for multiple chains
-# [FIX]: Added '-merge all' to handle identical chains automatically
 $GMX pdb2gmx -f ${PDB_NAME}.pdb \
     -o $WORKDIR/processed.gro \
     -p $WORKDIR/topol.top \
     -water $WATER -ff $FF -ignh \
-    -merge all \
     > pdb2gmx_attempt1.log 2>&1
 
 EXIT_CODE=$?
@@ -45,7 +43,6 @@ else
         -o $WORKDIR/processed.gro \
         -p $WORKDIR/topol.top \
         -water $WATER -ff $FF -ignh \
-        -merge all \
         -ter 
         
     echo ">> Interactive pdb2gmx setup complete."
@@ -54,6 +51,9 @@ fi
 # [FIX]: Strip absolute paths from the topology include lines
 # This handles the fact that we removed '-i' and GROMACS named the files itself
 sed -i "s|$WORKDIR/||g" $WORKDIR/topol.top
+
+# move ITP files to work directory
+mv *.itp $WORKDIR/
 
 # ==========================================
 # 2. Define Box

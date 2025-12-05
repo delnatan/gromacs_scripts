@@ -4,7 +4,7 @@ export GMX_MAXBACKUP=-1
 
 # --- INPUT & OUTPUT FILES ---
 # The name of your input PDB file (without extension)
-PDB_NAME="your_pdb_name"
+PDB_NAME="Ndj1_Mps3_SK1"
 
 # organize output & script folders
 RESULTS_DIR="results"
@@ -13,7 +13,7 @@ mkdir -p $RESULTS_DIR
 mkdir -p $WORKDIR
 
 # --- EXECUTABLE SETTINGS --- 
-GMX="gmx_mpi"       # Executable name
+GMX="gmx"       # Executable name
 MPI_CMD=""          # MPI Runner (Leave empty if on workstation)
 GPU_FLAGS="-nb gpu" # run on GPU 
 
@@ -24,7 +24,7 @@ SALT_CONC=0.15        # in mol/liter, 0.15 is 'physiological'
                       # Production Simulation time in Nanoseconds
 NVT_TIME_PS=100
 NPT_TIME_PS=500
-SIM_TIME_NS=1000      # change this to production length
+SIM_TIME_NS=250       # change this to production length
 DT=0.002              # standard 2 fs step size, picosecond unit
 
 FF="charmm36-jul2022" # install from https://mackerell.umaryland.edu/charmm_ff.shtml

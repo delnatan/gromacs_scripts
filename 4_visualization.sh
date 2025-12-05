@@ -13,9 +13,9 @@ mkdir -p $VIZ_DIR
 
 # Settings for Visualization
 # Skip frames to make file smaller (e.g., 100ps = 0.1ns)
-DT_VIZ=100 
+DT_VIZ=10
 # Smooth out jittery atoms (averages N frames)
-SMOOTH_FRAMES=4
+SMOOTH_FRAMES=5
 
 echo "--> Configuration:"
 echo "    Input:  $XTC_FILE"
@@ -31,7 +31,7 @@ fi
 # 1. Make molecules 'whole'
 # ==========================================
 echo "1/5 undoing PBC on system"
-echo "System" | $GMX trjconv -s $TPR_FILE -F $XTC_FILE \
+echo "System" | $GMX trjconv -s $TPR_FILE -f $XTC_FILE \
                      -o $WORKDIR/tmp_whole.xtc \
                      -pbc whole \
                      -quiet

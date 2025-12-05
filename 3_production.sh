@@ -3,11 +3,40 @@ source 0_config.sh
 
 echo ">>> STARTING STEP 3: PRODUCTION MD <<<"
 
-# Define paths to keep main folder clean
-MD_MDP="$WORKDIR/md.mdp"
-TPR_FILE="$WORKDIR/md_0_1.tpr"
-CPT_FILE="$WORKDIR/md_0_1.cpt"
-TRAJ_FILE="$WORKDIR/md_0_1.xtc"
+MODE=$1
+NUM_REPLICAS=3
+
+if [[ "$MODE" == "replicates" ]]; then
+    echo ">>> MODE: New replicas <<<"
+    echo "   generating $NUM_REPLICAS independent simulations."
+    echo "   starting from NPT with new random velocities."
+
+    START=1
+    END=$NUM_REPLICAS
+
+    SET_GEN_VEL="yes"
+    SET_CONTINUATION="no"
+
+elif [[ "$MODE" == "extend_replicates" ]]; then
+    # CASE B: Extend Existing Replicates (100ns -> 200ns)
+    echo ">>> MODE: EXTEND REPLICATES <<<"
+    START=1
+    END=$NUM_REPLICAS
+    SET_GEN_VEL="no"       # Do not regen velocities
+    SET_CONTINUATION="yes" # Keep constraints
+    
+elif [[ "$MODE" == "continue" ]]; then
+    echo ">>> MODE: continue / extend <<<"
+    echo "    extending existing simulation "
+    START=1
+    END=1
+    SET_GEN_VEL="no"
+    SET_CONTINUATION="yes"
+else
+    echo "Usage: ./3_production.sh [replicates | extend_replicates | continue]"
+    exit 1
+fi
+
 
 # ==========================================
 # 1. Prepare Parameters (Template Strategy)
@@ -16,83 +45,71 @@ TRAJ_FILE="$WORKDIR/md_0_1.xtc"
 TOTAL_PS=$(echo "$SIM_TIME_NS * 1000" | bc)
 NSTEPS=$(echo "$TOTAL_PS / $DT" | bc)
 
-echo "--> Configuration: Target time is $SIM_TIME_NS ns ($TOTAL_PS ps)"
-
-# Generate the MD parameter file from template
-# We use the config variables to fill in the blanks
-sed -e "s/REPLACEME_TEMP/$TEMP/g" \
-    -e "s/REPLACEME_STEPS/$NSTEPS/g" \
-    -e "s/REPLACEME_DT/$DT/g" \
-    params/md.mdp.template > $MD_MDP
-
-# ==========================================
-# 2. Prepare Run Input (.tpr)
-# ==========================================
-if [ ! -f "$TPR_FILE" ]; then
-    # CASE A: New Simulation
-    echo "--> No existing run found. Assembling new binary input (tpr)..."
-    
-    # Check if NPT finished
-    if [ ! -f "$WORKDIR/npt.gro" ]; then
-        echo "!! ERROR: NPT output ($WORKDIR/npt.gro) not found. Did Step 2 finish?"
-        exit 1
+for (( i=$START; i<=$END; i++ ))
+do
+    if [[ "$MODE" == "replicates" ]] || [[ "$MODE" == "extend_replicates" ]]; then
+        PREFIX="md_rep_${i}"
+    else
+        PREFIX="md_0_1"
     fi
 
-    # Create the run file
-    $GMX grompp -f $MD_MDP \
-        -c $WORKDIR/npt.gro \
-        -t $WORKDIR/npt.cpt \
-        -p $WORKDIR/topol.top \
-        -o $TPR_FILE
-else
-    # CASE B: Extending Existing Simulation
-    echo "--> Existing run found. Ensuring it extends to $SIM_TIME_NS ns..."
+    MD_MDP="$WORKDIR/${PREFIX}.mdp"
+    TPR_FILE="$WORKDIR/${PREFIX}.tpr"
+    CPT_FILE="$WORKDIR/${PREFIX}.cpt"
+    FINAL_GRO="$WORKDIR/${PREFIX}.gro" # The file GROMACS writes when 100% done
+
+    echo "Processing: $PREFIX"
+
+    if [[ -f "$FINAL_GRO" && "$MODE" == "replicates" ]]; then
+        echo "--> simulation $PREFIX appears COMPLETED"
+        echo "skipping ...."
+    fi
+
+    # 1. prepare parameters (from template)
+    # Generate the MD parameter file from template
+    # We use the config variables to fill in the blanks
+    sed -e "s/REPLACEME_TEMP/$TEMP/g" \
+        -e "s/REPLACEME_STEPS/$NSTEPS/g" \
+        -e "s/REPLACEME_DT/$DT/g" \
+        -e "s/GENERATEVELO_TEMP/$SET_GEN_VEL/g" \
+        -e "s/SET_CONTINUATION/$SET_CONTINUATION/g" \
+        params/md.mdp.template > $MD_MDP
+
+    # 2. Prepare TPR
+
+    if [[ "$MODE" == "replicates" ]]; then
+        if [[ -f "$TPR_FILE" ]]; then
+            echo "--> TPR exists. Preserving."
+        else
+            echo "--> Assembling new binary input..."
+            $GMX grompp -f $MD_MDP \
+                 -c $WORKDIR/npt.gro \
+                 -t $WORKDIR/npt.cpt \
+                 -p $WORKDIR/topol.top \
+                 -o $TPR_FILE
+        fi
     
-    # 'convert-tpr' extends the run time inside the binary file
-    # If the file is already 50ns and you request 50ns, this does nothing.
-    $GMX convert-tpr -s $TPR_FILE -until $TOTAL_PS -o $TPR_FILE
-fi
+    elif [[ "$MODE" == "continue" ]] || [[ "$MODE" == "extend_replicates" ]]; then
+        if [[ -f "$TPR_FILE" ]]; then
+            echo "--> Extending run to $SIM_TIME_NS ns..."
+            # This updates the TPR limit to the new time
+            $GMX convert-tpr -s $TPR_FILE -until $TOTAL_PS -o $TPR_FILE
+        else
+            echo "!! ERROR: Cannot extend $PREFIX.tpr - file not found."
+            continue
+        fi
+    fi
 
-# ==========================================
-# 3. Execution (Smart Resume)
-# ==========================================
-CPI_FLAGS=""
-if [ -f "$CPT_FILE" ]; then
-    echo "--> Checkpoint found. Resuming from last saved step..."
-    CPI_FLAGS="-cpi $CPT_FILE -append"
-fi
+    # 3. Execution (Smart Resume)
+    CPI_FLAGS=""
+    if [ -f "$CPT_FILE" ]; then
+        echo "--> Checkpoint found. Resuming from last saved step..."
+        CPI_FLAGS="-cpi $CPT_FILE -append"
+    fi
 
-echo "--> Running Production MD..."
-# -deffnm sets the default filename for all outputs (log, edr, xtc, trr)
-# We point this to $WORKDIR/md_0_1 to keep root clean
-$MPI_CMD $GMX mdrun -v -deffnm $WORKDIR/md_0_1 $GPU_FLAGS $CPI_FLAGS
+    echo "--> Running Production MD..."
+    # -deffnm sets the default filename for all outputs (log, edr, xtc, trr)
+    # We point this to $WORKDIR/md_0_1 to keep root clean
+    $MPI_CMD $GMX mdrun -v -deffnm $WORKDIR/$PREFIX $GPU_FLAGS $CPI_FLAGS
 
-
-# ==========================================
-# 4. Analysis (RMSD)
-# ==========================================
-if [ -f "$TRAJ_FILE" ]; then
-    echo "--> Analyzing Backbone RMSD..."
-    
-    # RMSD: Group 4 (Backbone) for fit, Group 4 for calculation
-    # We use 'echo' to select the groups automatically
-    { echo "4"; echo "4"; } | $GMX rms -s $TPR_FILE -f $TRAJ_FILE -o $RESULTS_DIR/rmsd.xvg -tu ns
-    
-    # Inline Gnuplot
-    gnuplot <<-EOF
-        set terminal pngcairo size 800,600 enhanced font 'Arial,12'
-        set output "$RESULTS_DIR/4_rmsd.png"
-        set title "Backbone RMSD ($SIM_TIME_NS ns)"
-        set xlabel "Time (ns)"
-        set ylabel "RMSD (nm)"
-        set grid
-        
-        # Plot column 1 (time) vs 2 (RMSD)
-        plot "$RESULTS_DIR/rmsd.xvg" using 1:2 with lines lc rgb "dark-blue" title "Backbone"
-EOF
-
-    echo "--> Plot saved to $RESULTS_DIR/4_rmsd.png"
-else
-    echo "!! ERROR: Simulation did not produce a trajectory file."
-    exit 1
-fi
+done
