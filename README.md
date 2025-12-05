@@ -5,10 +5,10 @@ A streamlined collection of shell scripts for setting up and running molecular d
 This workflow automates the "Introductory Tutorial" by Justin Lemkul ([DOI: 10.1021/acs.jpcb.4c04901](https://pubs.acs.org/doi/full/10.1021/acs.jpcb.4c04901)).
 
 ## Key Features
+* **Replicate Support:** Easily run N=3 independent replicates with randomized velocities to ensure statistical validity.
+* **Multi-Chain Support:** Automatically handles clustering for protein complexes (chains A, B, etc.) during visualization.
 * **Centralized Config:** Control everything (Temperature, Time, PDB Name) from `0_config.sh`.
-* **Clean Workspace:** All intermediate files (tpr, gro, log) are hidden in `work_files/`.
-* **Auto-Resume:** The production script automatically detects checkpoints and extends simulations if you increase the time in the config.
-* **Inline Analysis:** Plots (PNG) are generated automatically after every step.
+* **Auto-Resume:** The scripts detect crashes and resume automatically.
 
 ## Prerequisites
 * **GROMACS** (installed as `gmx` or `gmx_mpi`)
@@ -30,7 +30,6 @@ This workflow automates the "Introductory Tutorial" by Justin Lemkul ([DOI: 10.1
     * Set `GPU_FLAGS` if you have an NVIDIA card.
 
 3.  **Run the Pipeline:**
-    You can run the steps individually:
 
     * **Step 1: Setup & Minimization**
         ```bash
@@ -45,20 +44,32 @@ This workflow automates the "Introductory Tutorial" by Justin Lemkul ([DOI: 10.1
         *Heats the system to target temp and stabilizes pressure.*
 
     * **Step 3: Production MD**
-        ```bash
-        ./3_production.sh
-        ```
-        *Runs the production simulation. Re-run this script to extend the simulation if you change `SIM_TIME_NS`.*
+        Choose your preferred mode:
+        
+        * **Option A: Independent Replicates (Recommended)**
+            ```bash
+            ./3_production.sh replicates
+            ```
+            *Generates 3 independent simulations (`md_rep_1`, `2`, `3`) with randomized initial velocities.*
+            *To extend these runs later (e.g., 100ns -> 200ns), use: `./3_production.sh extend_replicates`*
+
+        * **Option B: Single Continuous Run**
+            ```bash
+            ./3_production.sh continue
+            ```
+            *Runs/Extends a single trajectory (`md_0_1`).*
 
     * **Step 4: Visualization Prep**
+        Process your trajectories for viewing (centers protein, fixes PBC for multi-chain complexes, smooths jitter).
         ```bash
-        ./4_visualization.sh
+        ./4_visualization.sh [input_name]
         ```
-        *Centers the protein, removes water/ions, and smooths the trajectory for viewing in PyMOL/ChimeraX.*
+        * For Replicates: `./4_visualization.sh md_rep_1`
+        * For Single Run: `./4_visualization.sh` (defaults to `md_0_1`)
 
 ## Output Structure
 
-* `results/`: Contains all **Graphs** (PNG), **Data** (XVG), and the final **Cleaned Trajectory** for visualization.
+* `results/`: Contains all **Graphs** (PNG), **Data** (XVG), and the final **Cleaned Trajectories** (`_clean.xtc`) and **Reference PDBs** (`_ref.pdb`).
 * `work_files/`: Contains all intermediate GROMACS files (`.tpr`, `.gro`, `.log`, `.cpt`). 
 * `params/`: Contains the immutable MDP templates. **Do not edit these during a run.**
 
@@ -67,9 +78,10 @@ This workflow automates the "Introductory Tutorial" by Justin Lemkul ([DOI: 10.1
 Do **not** edit the files in `work_files/` (like `nvt.mdp`). They are overwritten every time you run a script.
 
 To change physics settings (e.g., changing the thermostat or cutoffs):
-1.  Edit the **Template** files in `params/` (e.g., `params/nvt.mdp.template`).
+1.  Edit the **Template** files in `params/` (e.g., `params/md.mdp.template`).
 2.  Keep the placeholders (e.g., `REPLACEME_TEMP`) intact if you want them controlled by `0_config.sh`.
 
-
-## Visualization
-It seems that the trajectory files don't support chain IDs. You can fix this in ChimeraX by using the `changechains #1 & protein A` command. You can select ions by directly specifying the atoms in ChimeraX (e.g. `sel @na` for sodium)
+## Visualization Notes
+* **ChimeraX:** Open the `_ref.pdb` first, then load the `_clean.xtc`.
+* **Chain IDs:** GROMACS trajectories often strip chain IDs. In ChimeraX, you can restore them or select by index.
+* **Multi-Chain:** The visualization script uses `-pbc cluster`, so your protein complex should stay bound together visually.
