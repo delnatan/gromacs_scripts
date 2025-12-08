@@ -63,6 +63,7 @@ do
     if [[ -f "$FINAL_GRO" && "$MODE" == "replicates" ]]; then
         echo "--> simulation $PREFIX appears COMPLETED"
         echo "skipping ...."
+        continue
     fi
 
     # 1. prepare parameters (from template)
